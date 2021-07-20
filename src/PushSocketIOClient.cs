@@ -21,17 +21,26 @@ public class PushSocketIOClient : MonoBehaviour
 
     SocketIOClient client;
 
+
+    public delegate void EventDelegate();
+
+    Dictionary<string, Dictionary<string, List<EventDelegate>>> events=new Dictionary<string, Dictionary<string, List<EventDelegate>>>();
+
+
+    public static PushSocketIOClient Client;
+
     // Start is called before the first frame update
     void Start()
     {
 
+      PushSocketIOClient.Client=this;
 
         client = new SocketIOClient(
             new SocketIOClientOption(EngineIOScheme.https, url, 443)
         );
 
 
-        client.On(SocketIOEvent.CONNECTION, () =>
+        client.On("connection", delegate()
         {
           Debug.Log("Connected!");
 
@@ -44,28 +53,61 @@ public class PushSocketIOClient : MonoBehaviour
             credentials.Add(new JProperty("password",password));
           }
 
-          client.Emit("authenticate", credentials, (JToken[] data)=>{
-            Debug.Log("authenticated");
+          Debug.Log("send auth "+credentials);
+          client.Emit("authenticate", credentials, delegate(JToken[] ack){
+                Debug.Log("authenticated");
+
           });
 
         });
 
-        client.On(SocketIOEvent.ERROR, () =>
+        client.On("error", delegate()
         {
           Debug.Log("Error!");
         });
 
-        client.On(SocketIOEvent.DISCONNECT, () =>
+        client.On("disconnect", delegate()
         {
           Debug.Log("Disconnect!");
         });
 
 
         client.Connect();
+
+
+
+
+
+
     }
 
 
+    void Subscribe(string channel, string eventName, EventDelegate callback){
 
+      if(!events.ContainsKey(channel)){
+        events.Add(channel, new Dictionary<string, List<EventDelegate>>());
+      }
+
+      if(!events[channel].ContainsKey(eventName)){
+        events[channel].Add(eventName, new List<EventDelegate>());
+
+        //subscribe here!
+        
+
+        client.Emit("subscribe", channel+"/"+eventName, delegate(JToken[] token){
+            Debug.Log("subscribed: "+channel+"/"+eventName);
+
+        });
+        client.On(channel+"/"+eventName, delegate(JToken[] token){
+            Debug.Log("received: "+channel+"/"+eventName);
+
+        });
+
+      }
+
+      events[channel][eventName].Add(callback);
+
+    }
 
 
      void OnDisable()
