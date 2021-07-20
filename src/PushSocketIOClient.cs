@@ -27,7 +27,7 @@ public class PushSocketIOClient : MonoBehaviour
 
 
         client = new SocketIOClient(
-            new SocketIOClientOption(EngineIOScheme.https, "socketio.nickolanack.com", 443)
+            new SocketIOClientOption(EngineIOScheme.https, url, 443)
         );
 
 
