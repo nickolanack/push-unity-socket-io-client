@@ -16,13 +16,16 @@ public class PushSocketIOClient : MonoBehaviour
 
 
     public string appId="example";
-    public string username="unity3d";
+    public string username="";
     public string password="";
+
+    public string channelPrefix="example.";
+
 
     SocketIOClient client;
 
 
-    public delegate void EventDelegate();
+    public delegate void EventDelegate(JToken[] data);
 
     Dictionary<string, Dictionary<string, List<EventDelegate>>> events=new Dictionary<string, Dictionary<string, List<EventDelegate>>>();
 
@@ -30,7 +33,14 @@ public class PushSocketIOClient : MonoBehaviour
     public static PushSocketIOClient Client;
 
     // Start is called before the first frame update
+    // 
     void Start()
+    {
+
+      ConnectSocket();
+    }
+
+    void ConnectSocket()
     {
 
       PushSocketIOClient.Client=this;
@@ -40,13 +50,26 @@ public class PushSocketIOClient : MonoBehaviour
         );
 
 
+
+
+        string  user=username;
+        if(user==null||user.Equals("")){
+          user="unity-"+"-"+Application.platform+"-"+SystemInfo.deviceUniqueIdentifier;
+        }
+
+
+        
+        Debug.Log(user);
+
         client.On("connection", delegate()
         {
           Debug.Log("Connected!");
 
+
+
           JObject credentials=new JObject(
             new JProperty("appId",appId),
-            new JProperty("username",username+"-"+Application.platform)
+            new JProperty("username",user)
           );
 
           if(password!=null&&!password.Equals("")){
@@ -55,7 +78,37 @@ public class PushSocketIOClient : MonoBehaviour
 
           Debug.Log("send auth "+credentials);
           client.Emit("authenticate", credentials, delegate(JToken[] ack){
-                Debug.Log("authenticated");
+              
+
+
+              
+
+              if(ack[0].ToObject<bool>()){
+                  Debug.Log("authenticated");
+                  Subscribe("global", "message", delegate(JToken[] data){
+
+                    Debug.Log("received message");
+
+                  }, delegate(JToken[] ack){
+
+
+                    Send("global", "message", new JObject(
+                      new JProperty("hello","world")
+                    ));
+
+
+                  });
+
+
+                  
+
+
+              }
+
+
+             
+
+
 
           });
 
@@ -82,7 +135,41 @@ public class PushSocketIOClient : MonoBehaviour
     }
 
 
-    void Subscribe(string channel, string eventName, EventDelegate callback){
+    void Send(string channelName, string eventName, JObject data){
+
+      string channel=channelPrefix+channelName;
+
+
+        JObject send=new JObject(
+            new JProperty("channel", channel+"/"+eventName),
+            new JProperty("data", data)
+          );
+        Debug.Log("Send: "+channel+"/"+eventName+": "+send);
+
+        client.Emit("emit", send, delegate(JToken[] ack){
+
+            if(!ack[0].ToObject<bool>()){
+                Debug.Log("Failed to send data: "+channel+"/"+eventName);
+                return;
+            }
+            
+            Debug.Log("Sent data: "+channel+"/"+eventName);
+           
+        });
+
+
+    }
+
+    void Subscribe(string channelName, string eventName, EventDelegate callback){
+      Subscribe(channelName, eventName, callback, null);
+    }
+    void Subscribe(string channelName, string eventName, EventDelegate callback, EventDelegate ackCallback){
+
+
+      string channel=channelPrefix+channelName;
+
+
+      Debug.Log("Subscribe to: "+channel+": "+eventName);
 
       if(!events.ContainsKey(channel)){
         events.Add(channel, new Dictionary<string, List<EventDelegate>>());
@@ -94,16 +181,29 @@ public class PushSocketIOClient : MonoBehaviour
         //subscribe here!
         
 
-        client.Emit("subscribe", channel+"/"+eventName, delegate(JToken[] token){
+        Debug.Log("Emit subscription");
+
+        JObject send=new JObject(
+            new JProperty("channel", channel+"/"+eventName)
+        );
+
+        client.Emit("subscribe", send, delegate(JToken[] ack){
             Debug.Log("subscribed: "+channel+"/"+eventName);
+
+            if(ackCallback!=null){
+              ackCallback(ack);
+            }
 
         });
         client.On(channel+"/"+eventName, delegate(JToken[] token){
             Debug.Log("received: "+channel+"/"+eventName);
-
+            //fire any events;
         });
 
       }
+
+
+      Debug.Log("Add Delegate");
 
       events[channel][eventName].Add(callback);
 
