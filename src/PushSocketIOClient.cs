@@ -7,6 +7,8 @@ using EngineIOSharp.Common.Enum;
 using SocketIOSharp.Client;
 using SocketIOSharp.Common;
 
+using System;
+
 public class PushSocketIOClient : MonoBehaviour
 {
 
@@ -25,9 +27,21 @@ public class PushSocketIOClient : MonoBehaviour
     SocketIOClient client;
 
 
-    public delegate void EventDelegate(JToken[] data);
+    //TODO: make this private
+    public bool connected=false;
+    public bool authenticated=false;
 
+
+    public bool printDebug=false;
+
+
+    public delegate void EventDelegate(JToken[] data);
+    
     Dictionary<string, Dictionary<string, List<EventDelegate>>> events=new Dictionary<string, Dictionary<string, List<EventDelegate>>>();
+    
+
+    public delegate void StateDelegate();
+    Dictionary<string, List<StateDelegate>> stateListeners=new Dictionary<string, List<StateDelegate>>();
 
 
     public static PushSocketIOClient Client;
@@ -36,7 +50,6 @@ public class PushSocketIOClient : MonoBehaviour
     // 
     void Start()
     {
-
       ConnectSocket();
     }
 
@@ -59,13 +72,14 @@ public class PushSocketIOClient : MonoBehaviour
 
 
         
-        Debug.Log(user);
+        //Debug.Log(user);
 
         client.On("connection", delegate()
         {
-          Debug.Log("Connected!");
 
-
+          connected=true;
+          EmitState("connect");
+          Debug.Log("Connected");
 
           JObject credentials=new JObject(
             new JProperty("appId",appId),
@@ -76,38 +90,18 @@ public class PushSocketIOClient : MonoBehaviour
             credentials.Add(new JProperty("password",password));
           }
 
-          Debug.Log("send auth "+credentials);
+          //Debug.Log("send auth "+credentials);
           client.Emit("authenticate", credentials, delegate(JToken[] ack){
               
-
-
+              
               
 
               if(ack[0].ToObject<bool>()){
-                  Debug.Log("authenticated");
-                  Subscribe("global", "message", delegate(JToken[] data){
 
-                    Debug.Log("received message");
-
-                  }, delegate(JToken[] ack){
-
-
-                    Send("global", "message", new JObject(
-                      new JProperty("hello","world")
-                    ));
-
-
-                  });
-
-
-                  
-
-
+                authenticated=true;
+                EmitState("authenticate");
+                  Debug.Log("Authenticated");
               }
-
-
-             
-
 
 
           });
@@ -121,6 +115,7 @@ public class PushSocketIOClient : MonoBehaviour
 
         client.On("disconnect", delegate()
         {
+          connected=false;
           Debug.Log("Disconnect!");
         });
 
@@ -135,7 +130,7 @@ public class PushSocketIOClient : MonoBehaviour
     }
 
 
-    void Send(string channelName, string eventName, JObject data){
+    public void Send(string channelName, string eventName, JObject data){
 
       string channel=channelPrefix+channelName;
 
@@ -157,13 +152,82 @@ public class PushSocketIOClient : MonoBehaviour
            
         });
 
-
     }
 
-    void Subscribe(string channelName, string eventName, EventDelegate callback){
+    public void Subscribe(string channelName, string eventName, EventDelegate callback){
       Subscribe(channelName, eventName, callback, null);
     }
-    void Subscribe(string channelName, string eventName, EventDelegate callback, EventDelegate ackCallback){
+
+
+    void Once(string state, StateDelegate del){
+
+      StateDelegate wrapper=null;
+
+      wrapper=delegate(){
+        OffState(state, wrapper);
+        del();
+      };
+      OnState(state, wrapper);
+
+    }
+
+    void EmitState(string state){
+
+      Debug.Log("Emit state: "+state);
+
+      if(!stateListeners.ContainsKey(state)){
+          return;
+      }
+
+      foreach(StateDelegate del in stateListeners[state]){
+        del();
+      }
+
+    }
+
+    void OnState(string state, StateDelegate del){
+        if(!stateListeners.ContainsKey(state)){
+          stateListeners.Add(state, new List<StateDelegate>());
+        }
+
+
+
+        stateListeners[state].Add(del);
+    }
+
+    void OffState(string state, StateDelegate del){
+      if(!stateListeners.ContainsKey(state)){
+        throw new Exception("There are no listeners for state: "+state);   
+      }
+
+      if(!stateListeners[state].Contains(del)){
+        throw new Exception("Callback is not listening for state: "+state);   
+      }
+
+      stateListeners[state].Remove(del);
+      if(stateListeners[state].Count==0){
+        stateListeners.Remove(state);
+      }
+
+    }
+
+    public void Subscribe(string channelName, string eventName, EventDelegate callback, EventDelegate ackCallback){
+
+
+      if(!(connected&&authenticated)){
+        
+        Debug.Log("Queue subscription: "+channelName+"/"+eventName);
+
+        Once("authenticate", delegate(){
+
+          Subscribe(channelName, eventName, callback, ackCallback);
+
+        });
+
+        return;
+
+      }
+
 
 
       string channel=channelPrefix+channelName;
