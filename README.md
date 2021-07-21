@@ -1,2 +1,3 @@
 # push-unity-socket-io-client
-cs push socketio client for unity
+
+Uses SocketIOSharp, and connects to a customized socketio server
