@@ -46,6 +46,18 @@ public class PushSocketIOClient : MonoBehaviour
 
     public static PushSocketIOClient Client;
 
+    class EmitData{
+
+      public string cmd;
+      public JObject data;
+      public EventDelegate ack;
+
+    }
+
+
+    Queue<EmitData> emitQueue=new Queue<EmitData>();
+    bool emitting=false;
+
     // Start is called before the first frame update
     // 
     void Start()
@@ -91,7 +103,7 @@ public class PushSocketIOClient : MonoBehaviour
           }
 
           //Debug.Log("send auth "+credentials);
-          client.Emit("authenticate", credentials, delegate(JToken[] ack){
+          QueueEmit("authenticate", credentials, delegate(JToken[] ack){
               
               
               
@@ -100,7 +112,7 @@ public class PushSocketIOClient : MonoBehaviour
 
                 authenticated=true;
                 EmitState("authenticate");
-                  Debug.Log("Authenticated");
+                  //Debug.Log("Authenticated");
               }
 
 
@@ -122,10 +134,37 @@ public class PushSocketIOClient : MonoBehaviour
 
         client.Connect();
 
+    }
 
 
+    void Update(){
+        if((!emitting)&&emitQueue.Count>0){
+          Emit(emitQueue.Dequeue());
+        }
+    }
 
 
+    void Emit(EmitData evt){
+
+      emitting=true;
+      client.Emit(evt.cmd, evt.data, delegate(JToken[] ack){
+        
+        if(evt.ack!=null){
+          evt.ack(ack);
+        }
+        emitting=false;
+      });
+
+    }
+
+
+    void QueueEmit(string cmd, JObject data, EventDelegate ack){
+
+      EmitData evt=new EmitData();
+      evt.cmd=cmd;
+      evt.data=data;
+      evt.ack=ack;
+      emitQueue.Enqueue(evt);
 
     }
 
@@ -139,16 +178,16 @@ public class PushSocketIOClient : MonoBehaviour
             new JProperty("channel", channel+"/"+eventName),
             new JProperty("data", data)
           );
-        Debug.Log("Send: "+channel+"/"+eventName+": "+send);
+        //Debug.Log("Send: "+channel+"/"+eventName+": "+send);
 
-        client.Emit("emit", send, delegate(JToken[] ack){
+        QueueEmit("emit", send, delegate(JToken[] ack){
 
             if(!ack[0].ToObject<bool>()){
                 Debug.Log("Failed to send data: "+channel+"/"+eventName);
                 return;
             }
             
-            Debug.Log("Sent data: "+channel+"/"+eventName);
+            //Debug.Log("Sent data: "+channel+"/"+eventName);
            
         });
 
@@ -179,7 +218,7 @@ public class PushSocketIOClient : MonoBehaviour
           return;
       }
 
-      foreach(StateDelegate del in stateListeners[state]){
+      foreach(StateDelegate del in stateListeners[state].ToArray()){
         del();
       }
 
@@ -251,7 +290,7 @@ public class PushSocketIOClient : MonoBehaviour
             new JProperty("channel", channel+"/"+eventName)
         );
 
-        client.Emit("subscribe", send, delegate(JToken[] ack){
+        QueueEmit("subscribe", send, delegate(JToken[] ack){
             Debug.Log("subscribed: "+channel+"/"+eventName);
 
             if(ackCallback!=null){
@@ -259,9 +298,29 @@ public class PushSocketIOClient : MonoBehaviour
             }
 
         });
-        client.On(channel+"/"+eventName, delegate(JToken[] token){
+        client.On(channel+"/"+eventName, delegate(JToken[] data){
             Debug.Log("received: "+channel+"/"+eventName);
             //fire any events;
+            
+            if(!events.ContainsKey(channel)){
+              Debug.Log("No listeners: "+channel);
+              return;
+            }
+
+
+            if(!events[channel].ContainsKey(eventName)){
+              Debug.Log("No listeners: "+channel+"/"+eventName);
+              return;
+            }
+                
+
+
+            foreach(EventDelegate listener in events[channel][eventName]){
+              listener(data);
+            }
+              
+            
+
         });
 
       }

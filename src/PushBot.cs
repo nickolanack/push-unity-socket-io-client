@@ -4,7 +4,7 @@ using UnityEngine;
 
 using Newtonsoft.Json.Linq;
 
-public class ChatBot : MonoBehaviour
+public class PushBot : MonoBehaviour
 {
 
 
